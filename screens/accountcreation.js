@@ -1,13 +1,20 @@
-import {React,useState,Component, useEffect } from 'react';
+import {React,useState,Component, useEffect,useContext } from 'react';
 import { StyleSheet, Text, View,Image,Button,TextInput,Alert} from 'react-native';
-
-const requestURL = "https://pythonchessapi.herokuapp.com";
+import {SocketContext} from '../context/socket.js';
 
 const AccountCreation = ({navigation,route}) => {
+    const socket = useContext(SocketContext);
     const [password, set_password] = useState('');
     const [confirmPass,set_confirm] = useState('')
     const [user_ID, set_ID,] = useState('');
     const [username, set_username] = useState('');
+
+    useEffect(() => {
+        socket.on('account_creation_success',(data)=>{
+            navigation.navigate('Login screen')
+        })
+
+    },[])
 
     const createAccount = () => {
         if (password != confirmPass){
@@ -24,35 +31,10 @@ const AccountCreation = ({navigation,route}) => {
             return
         }
         console.log("Creating Account")
-        var xhr = new XMLHttpRequest();
-        var formData = new FormData();
         console.log(user_ID)
         console.log(username)
         console.log(password)
-        formData.append('password',password);
-        formData.append('new_username',username);
-        formData.append('new_user_ID',user_ID);
-        xhr.onreadystatechange = (e) => {
-        if (xhr.readyState !== 4) {
-            return;
-        }
-        if (xhr.status === 200) {
-            var data = JSON.parse(xhr.response)
-            console.log(data)
-            if (data.valid == 1){
-                console.log(data.msg)
-                navigation.navigate('Login screen')
-            }
-            else{
-                console.log(data.msg)
-            }
-        } 
-        else {
-            console.log('account creation failure')
-        }
-        };
-        xhr.open('POST',requestURL+'/create_account',true);
-        xhr.send(formData);
+        socket.emit('create_account',{new_user_ID:user_ID,new_username:username,password:password})
     }
 
     return(
@@ -67,6 +49,9 @@ const AccountCreation = ({navigation,route}) => {
             <View style={{marginTop:"2%",justifyContent: 'center',alignItems:'center',width:'60%'}}>
                 <View style={styles.button}>
                     <Button title='Confirm' onPress={createAccount}></Button>
+                </View>
+                <View style={styles.button}>
+                    <Button title='Back' onPress={()=>navigation.navigate('Login screen')}></Button>
                 </View>
             </View>
         </View>

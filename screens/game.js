@@ -1,16 +1,14 @@
-import {React,useState} from 'react';
+import {React,useState,useEffect,useContext} from 'react';
 import { StyleSheet, Text, View, Dimensions,Image,Button,TextInput,ScrollView,Alert} from 'react-native';
 import {chess} from '../components/chess_board.js';
 import uuid from 'react-native-uuid';
+import {SocketContext} from '../context/socket.js';
 
 const windowWidth = Dimensions.get('window').width;
 const windowheight = Dimensions.get('window').height;
 var dot = require('../assets/dot.png')
 var empty = require('../assets/empty.png')
 var screensize = 0
-
-const requestURL = "https://pythonchessapi.herokuapp.com";
-// const requestURL = "http://127.0.0.1:8000"
 
 if (windowWidth < windowheight){
    screensize = windowWidth
@@ -26,8 +24,8 @@ const block_size =Math.floor((screensize - 20)/8)
 var game = new chess(block_size);
 
 function getBoard(game_board){
-  background_color1 = 'rgb(222, 128, 35)';
-  background_color2 = 'rgb(255, 163, 71)';
+  var background_color1 = 'rgb(222, 128, 35)';
+  var background_color2 = 'rgb(255, 163, 71)';
   var board = new Array(8)
   for (let i = 0;i < 8;i++){
     board[i] = new Array(8);
@@ -53,6 +51,7 @@ function getBoard(game_board){
 }
 
 const GameScreen = ({navigation, route}) => {
+    const socket = useContext(SocketContext);
     const [picked_up,setpickup] = useState(['nothing'])
     var board = getBoard(game.board)
     var [gameBoard,setgameBoard] = useState(board)
@@ -60,7 +59,7 @@ const GameScreen = ({navigation, route}) => {
     const [global_chat,set_global_chat] = useState('no New messages')
     const [newMessage,set_newMessage] = useState('')
     const [promotion_key,set_promotionKey] = useState('')
-    const [play_as,set_play_as] = useState('spectator')
+    const [play_as,set_play_as] = useState('spectate')
 
     const [displayMenu,set_displayMenu] = useState(StyleSheet.create({
         gameMenu:{
@@ -69,205 +68,13 @@ const GameScreen = ({navigation, route}) => {
     },
     }))
 
-    function pick_up(e,piece){
-        if (play_as == 'spectator'){
-        return
-        }
-        if (picked_up == 'nothing' && piece[0].name != "blank"){
-        if (piece[0].color != play_as){
-            return
-        }
-            console.log(game_ID)
-            setpickup(piece)
-            console.log("picked up " + piece[0].name + " at " + piece[1] + " " + piece[2])
-            let uci = game.dic[piece[2]]
-            uci = uci.concat(8-piece[1])
-            check_move_piece(uci)
-        }
-        
-        else if (picked_up != 'nothing'){
-        if(piece[2] != picked_up[2] || picked_up[1] != piece[1]){
-            console.log("drop down " + picked_up[0].name + " at " + piece[1] + " " + piece[2])
-            let p1 = [picked_up[2],picked_up[1]]
-            let p2 = [piece[2],piece[1]]
-            let uci = (game.move_to_uci(p1,p2))
-            if (picked_up[0].canPromote){
-            uci = uci + promotion_key
-            }
-            console.log('sending ' + uci)
-            check_move(uci)
-        }
-        console.log("drop down " + picked_up[0].name + " at " + piece[1] + " " + piece[2])
-        setpickup(['nothing'])
-        }
-    }
+    useEffect(() => {
+        socket.on('new client', (data) =>{
+            console.log(data.client_ID)
+            set_temp_ID(data.client_ID)
+        })
 
-    function animate(){
-        var xhr = new XMLHttpRequest();
-        var formData = new FormData();
-        formData.append('gameID',game_ID);
-        xhr.onreadystatechange = (e) => {
-        if (xhr.readyState !== 4) {
-            
-            return;
-        }
-        
-        if (xhr.status === 200) {
-            let data = JSON.parse(xhr.response)
-            if (data.valid == 1){
-            game.update(data.array)
-            setgameBoard(getBoard(game.board))
-            if (data.chat != undefined){
-                set_global_chat(data.chat);
-            }
-            setTimeout(animate,200)
-            }
-        } 
-        else {
-            console.log('error')
-        }
-        }
-        xhr.open('post',requestURL+'/update_state',true)
-        xhr.send(formData)
-    }
-
-    function close(){    
-        var xhr = new XMLHttpRequest();
-        var formData = new FormData();
-
-        formData.append('user_ID',route.params.user_ID);
-
-        xhr.open('POST',requestURL+'/close_account',true);
-        xhr.onload = function () {
-            if (xhr.status >= 200 && xhr.status < 400) {
-            console.log('user_logged_off')
-            navigation.navigate('Login screen')
-            } 
-            else {
-            console.log('error')
-            }
-        }
-        xhr.send(formData);
-    }
-
-    function Pre_Join(){
-        Alert.alert(
-        "Join Room",
-        "Choose Join option",
-        [
-            {
-            text: "Join As White",
-            onPress: () => join_game('white'),
-            style: "cancel",
-            },
-            {
-            text: "Join As Black",
-            onPress: () => join_game('black'),
-            style: "cancel",
-            },
-            {
-            text: "Spectate",
-            onPress: () => join_game('spectator'),
-            style: "cancel",
-            },
-            {
-            text: "Cancel",
-            style: "cancel",
-            },
-        ],
-        );
-    }
-
-    function join_game(color){
-        var formData = new FormData();
-        var xhr = new XMLHttpRequest();
-        
-        formData.append('gameID',game_ID);
-        formData.append('userId',route.params.user_ID);
-        formData.append('join_as',color)
-        
-        xhr.onreadystatechange = (e) => {
-        if (xhr.readyState !== 4) {
-            return;
-        }
-        
-        if (xhr.status === 200) {
-            console.log(e)
-            let data = JSON.parse(xhr.response)
-            if (data.valid == 1){
-            game.update(data.array)
-            set_play_as(color)
-            animate()
-            }
-            else{
-            Alert.alert(
-                "Join Room Error",
-                "Failure to join",
-                [
-                {
-                    text: "Cancel",
-                    style: "cancel",
-                },
-                ],
-            );
-            console.log('error')
-            }
-        } 
-        else {
-            Alert.alert(
-            "Join Room Error",
-            "Failure to join",
-            [
-                {
-                text: "Cancel",
-                style: "cancel",
-                },
-            ],
-            );
-            console.log('error')
-        }
-        };
-        xhr.open('POST',requestURL+'/start_game',true);
-        xhr.send(formData);
-    }
-
-    function check_move(uci){
-        var formData = new FormData();
-        var xhr = new XMLHttpRequest();
-        formData.append('uci',uci);
-        formData.append('gameID',game_ID)
-
-        xhr.onreadystatechange = (e) => {
-        if (xhr.readyState !== 4) {
-            return;
-        }
-        
-        if (xhr.status === 200) {
-            let data = JSON.parse(xhr.response)
-            if (data.valid == 1){
-            game.update(data.array)
-            game.clear()
-            }
-        } 
-        else {
-            console.log('error')
-        }
-        };
-        xhr.open('POST',requestURL+'/check_move',true);
-        xhr.send(formData);
-    }
-
-    function check_move_piece(uci){
-        var xhr = new XMLHttpRequest();
-        var formData = new FormData();
-        formData.append('uci',uci);
-        formData.append('gameID',game_ID)
-        xhr.onreadystatechange = (e) => {
-        if (xhr.readyState !== 4) {
-            return;
-        }
-        if (xhr.status === 200) {
-            let data = JSON.parse(xhr.response)
+        socket.on('update_move_check', (data) =>{
             game.clear()
             if (data.validmove.length != 0){
             let canPromote = false
@@ -297,55 +104,129 @@ const GameScreen = ({navigation, route}) => {
                     }
                     game.board[move[1][0]][move[1][1]].highlight = true
                 }
+                setgameBoard(getBoard(game.board))
                 if (canPromote){
-                set_displayMenu(StyleSheet.create({
-                    gameMenu:{
-                    flexDirection:'row',
-                },
-                }))
+                    set_displayMenu(StyleSheet.create({
+                        gameMenu:{
+                        flexDirection:'row',
+                        },
+                    }))
                 }
                 else{
-                set_displayMenu(StyleSheet.create({
-                    gameMenu:{
-                    display:'none',
-                    flexDirection:'row',
-                },
-                }))
+                    set_displayMenu(StyleSheet.create({
+                        gameMenu:{
+                        display:'none',
+                        flexDirection:'row',
+                    },
+                    }))
                 }
             }
-        } 
-        else {
-            console.log('error')
+        })
+
+        socket.on('update_board', (data) => {
+            game.update(data.game_array)
+            game.clear()
+            setgameBoard(getBoard(game.board))
+        })
+
+        socket.on('update_chat', (data) => {
+            set_global_chat(data.chat);
+        })
+
+        socket.on('update_state', (data) => {
+            game.update(data.game_array)
+            game.clear()
+            setgameBoard(getBoard(game.board))
+            set_global_chat(data.chat);
+        })
+
+        socket.on('joined as', (data) => {
+            set_play_as(data.join_as)
+        })
+
+        socket.on('error',(data)=>{
+            Alert.alert(
+                "Error",
+                data.msg,
+                [
+                    {
+                    text: "Return",
+                    style: "cancel",
+                    },
+                ]
+            )
+        })
+
+        socket.on('success',(data)=>{
+            Alert.alert(
+                "Success",
+                data.msg,
+                [
+                    {
+                    text: "Return",
+                    style: "cancel",
+                    },
+                ]
+            )
+        })
+
+    }, []);
+
+    function pick_up(e,piece){
+        if (play_as == 'spectator'){
+            return
         }
-        };
-        xhr.open('POST',requestURL+'/check_move_piece',true);
-        xhr.send(formData);
+        if (picked_up == 'nothing' && piece[0].name != "blank"){
+            if (piece[0].color != play_as){
+                return
+            }
+            console.log(game_ID)
+            setpickup(piece)
+            var uci = game.dic[piece[2]]
+            uci = uci.concat(8-piece[1])
+            socket.emit('check_move_piece',{game_ID:game_ID,uci:uci})
+        }
+        
+        else if (picked_up != 'nothing'){
+        if(piece[2] != picked_up[2] || picked_up[1] != piece[1]){
+            var p1 = [picked_up[2],picked_up[1]]
+            var p2 = [piece[2],piece[1]]
+            var uci = (game.move_to_uci(p1,p2))
+            if (picked_up[0].canPromote){
+            uci = uci + promotion_key
+            }
+            socket.emit('check_move',{game_ID:game_ID,uci:uci})
+        }
+        setpickup(['nothing'])
+        }
     }
 
-    function send_message(){
-        console.log("sending " + newMessage)
-        var xhr = new XMLHttpRequest();
-        var formData = new FormData();
-        formData.append('gameID',game_ID);
-        formData.append('userId',route.params.user_ID);
-        formData.append('message',newMessage);
-        xhr.onreadystatechange = (e) => {
-        if (xhr.readyState !== 4) {
-            return;
-        }
-        if (xhr.status === 200) {
-            console.log('message sent')
-        } 
-        else {
-            console.log('error')
-        }
-        };
-        xhr.open('POST',requestURL+'/new_message',true);
-        xhr.send(formData);
-    }
-
-    function enteredNewMessage(enteredText){
-        set_newMessage(enteredText);
+    function Pre_Join(){
+        Alert.alert(
+        "Join Room",
+        "Choose Join option",
+        [
+            {
+            text: "Join As White",
+            onPress: () => {socket.emit('join_game',{game_ID:game_ID,join_as:'white'})},
+            style: "cancel",
+            },
+            {
+            text: "Join As Black",
+            onPress: () => {socket.emit('join_game',{game_ID:game_ID,join_as:'black'})},
+            style: "cancel",
+            },
+            {
+            text: "Spectate",
+            onPress: () => {socket.emit('join_game',{game_ID:game_ID,join_as:'spectate'})},
+            style: "cancel",
+            },
+            {
+            text: "Cancel",
+            style: "cancel",
+            },
+        ],
+        );
     }
     
     return (
@@ -365,7 +246,7 @@ const GameScreen = ({navigation, route}) => {
                 </View>
                 <Text>Current Room ID: {game_ID}</Text>
             </View>
-            <Button title='Quit' onPress={close}></Button>
+            <Button title='Quit' onPress={()=>{socket.emit('log_off');navigation.navigate('Login screen')}}></Button>
             </View>
 
             <View style={displayMenu.gameMenu}>
@@ -398,9 +279,9 @@ const GameScreen = ({navigation, route}) => {
             </ScrollView>
             <View style={styles.chat_input}>
                 <ScrollView style={{width:'80%',borderWidth:1,}}>
-                <TextInput placeholder='Enter Your Message' onChangeText={enteredNewMessage} clearButtonMode="always" value={newMessage}></TextInput>
+                <TextInput placeholder='Enter Your Message' onChangeText={set_newMessage} clearButtonMode="always" value={newMessage}></TextInput>
                 </ScrollView>
-                <View style={{borderWidth:1,width: '20%'}}><Button title='Send' onPress={send_message}></Button></View>
+                <View style={{borderWidth:1,width: '20%'}}><Button title='Send' onPress={()=>{socket.emit('new_message',{game_ID:game_ID,message:newMessage})}}></Button></View>
             </View>
             </View>
         </View>
